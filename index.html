@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboard Inmobiliario Encuentra24 Costa Rica</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <nav class="topbar">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <span>Dashboard Inmobiliario Encuentra24 CR</span>
+        </div>
+        <div class="nav-links">
+          <a href="#oferta">Oferta</a>
+          <a href="#precios">Precios</a>
+          <a href="#tipologias">Tipologías</a>
+          <a href="#calidad">Calidad</a>
+        </div>
+      </nav>
+      <section class="hero-content">
+        <div>
+          <p class="eyebrow">Encuentra24 Costa Rica · bienes raíces</p>
+          <h1>Plataforma ejecutiva del mercado inmobiliario</h1>
+          <p class="hero-text">
+            Inventario, precios, zonas, categorías, precio por m², tipologías y calidad de datos
+            para venta y alquiler, usando exclusivamente los CSV generados por el scraper.
+          </p>
+          <div class="hero-actions">
+            <a class="primary-action" href="#dashboard">Explorar dashboard</a>
+            <a class="secondary-action" href="data/inmuebles_encuentra24_cr_completo.csv">Descargar CSV</a>
+          </div>
+        </div>
+        <aside class="hero-card">
+          <span>Actualización</span>
+          <strong id="updatedLabel">Cargando...</strong>
+          <span>Fuente</span>
+          <strong>Encuentra24</strong>
+          <span>Moneda analítica</span>
+          <strong>USD normalizado</strong>
+        </aside>
+      </section>
+    </header>
+
+    <main id="dashboard">
+      <section class="section-shell kpi-section">
+        <div class="section-title">
+          <p class="eyebrow">Resumen ejecutivo</p>
+          <h2>Indicadores principales</h2>
+          <p class="section-note">Los KPIs de precio no mezclan venta y alquiler. El USD/m² se muestra como mediana sin outliers para evitar que anuncios con m² mal cargados distorsionen la lectura.</p>
+        </div>
+        <div id="kpiGrid" class="kpi-grid"></div>
+      </section>
+
+      <section class="section-shell filter-shell">
+        <div class="section-title">
+          <p class="eyebrow">Filtros globales</p>
+          <h2>Exploración del mercado</h2>
+        </div>
+        <div class="filters">
+          <div class="filter-control"><span>Operación</span><div id="operationFilter" class="multi-select"></div></div>
+          <div class="filter-control"><span>Categoría</span><div id="categoryFilter" class="multi-select"></div></div>
+          <div class="filter-control"><span>Provincia</span><div id="provinceFilter" class="multi-select"></div></div>
+          <div class="filter-control"><span>Zona</span><div id="zoneFilter" class="multi-select"></div></div>
+          <div class="filter-control"><span>Dormitorios</span><div id="roomFilter" class="multi-select"></div></div>
+          <label>Precio mínimo<input id="priceMin" type="number" min="0" inputmode="numeric" placeholder="USD" /></label>
+          <label>Precio máximo<input id="priceMax" type="number" min="0" inputmode="numeric" placeholder="USD" /></label>
+          <label>m² mínimo<input id="m2Min" type="number" min="0" inputmode="numeric" placeholder="m²" /></label>
+          <label>m² máximo<input id="m2Max" type="number" min="0" inputmode="numeric" placeholder="m²" /></label>
+          <button id="resetFilters" type="button">Limpiar filtros</button>
+        </div>
+      </section>
+
+      <section id="oferta" class="section-shell dashboard-grid">
+        <article class="panel span-4">
+          <div class="panel-header"><h3>Oferta por operación</h3><span id="operationCount"></span></div>
+          <div id="operationBars" class="bar-chart"></div>
+        </article>
+        <article class="panel span-8">
+          <div class="panel-header"><h3>Oferta por categoría</h3><span>Ranking de inventario</span></div>
+          <div id="categoryBars" class="bar-chart dense"></div>
+        </article>
+        <article class="panel span-4">
+          <div class="panel-header"><h3>Provincias con más inventario</h3><span>Top 10</span></div>
+          <div id="provinceBars" class="bar-chart"></div>
+        </article>
+        <article class="panel span-8">
+          <div class="panel-header"><h3>Zonas con más inventario</h3><span>Top 15</span></div>
+          <div id="zoneInventoryBars" class="bar-chart dense"></div>
+        </article>
+      </section>
+
+      <section id="precios" class="section-shell dashboard-grid">
+        <article class="panel span-6">
+          <div class="panel-header"><h3>Distribución de precios</h3><span id="priceCount"></span></div>
+          <div id="priceHistogram" class="bar-chart histogram"></div>
+        </article>
+        <article class="panel span-6">
+          <div class="panel-header"><h3>Distribución USD/m²</h3><span>Rangos comerciales</span></div>
+          <div id="ppm2Histogram" class="bar-chart histogram"></div>
+        </article>
+        <article class="panel span-6">
+          <div class="panel-header"><h3>Precio mediano por categoría</h3><span id="categoryMedianScope">USD</span></div>
+          <div id="categoryMedianBars" class="bar-chart"></div>
+        </article>
+        <article class="panel span-6">
+          <div class="panel-header"><h3>Promedio sin outliers por categoría</h3><span id="categoryCleanAvgScope">USD depurado</span></div>
+          <div id="categoryCleanAvgBars" class="bar-chart"></div>
+        </article>
+        <article class="panel span-12">
+          <div class="panel-header"><h3>Precio vs m²</h3><span id="scatterSummary"></span></div>
+          <div class="scatter-tools">
+            <label>m² mínimo<input id="scatterM2Min" type="number" min="0" inputmode="numeric" placeholder="0" /></label>
+            <label>m² máximo<input id="scatterM2Max" type="number" min="0" inputmode="numeric" placeholder="auto" /></label>
+            <label>Precio mínimo<input id="scatterPriceMin" type="number" min="0" inputmode="numeric" placeholder="0 USD" /></label>
+            <label>Precio máximo<input id="scatterPriceMax" type="number" min="0" inputmode="numeric" placeholder="auto USD" /></label>
+            <button id="resetScatterFilters" type="button">Reset filtros</button>
+            <strong id="scatterVisibleCount">0 anuncios visibles</strong>
+          </div>
+          <div class="scatter-wrap">
+            <canvas id="scatterCanvas" class="scatter" width="1200" height="430"></canvas>
+            <div id="scatterTooltip" class="scatter-tooltip" hidden></div>
+          </div>
+        </article>
+        <article class="panel span-12">
+          <div class="panel-header"><h3>Precios por categoría</h3><span id="categoryTableScope">Mediana, promedio depurado y USD/m²</span></div>
+          <div class="table-wrap">
+            <table id="categoryPriceTable">
+              <thead><tr><th>Categoría</th><th>Anuncios</th><th>Promedio</th><th>Mediana</th><th>Prom. sin outliers</th><th>Mediana USD/m²</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="section-shell dashboard-grid">
+        <article class="panel span-4">
+          <div class="panel-header"><h3>Zonas premium</h3><span>Mediana</span></div>
+          <div id="premiumZones" class="bar-chart"></div>
+        </article>
+        <article class="panel span-4">
+          <div class="panel-header"><h3>Zonas accesibles</h3><span>Mediana</span></div>
+          <div id="accessibleZones" class="bar-chart"></div>
+        </article>
+        <article class="panel span-4">
+          <div class="panel-header"><h3>Mejor USD/m²</h3><span>Mediana</span></div>
+          <div id="ppm2Zones" class="bar-chart"></div>
+        </article>
+      </section>
+
+      <section id="tipologias" class="section-shell dashboard-grid">
+        <article class="panel span-5">
+          <div class="panel-header"><h3>Tipologías casas y apartamentos</h3><span>Por dormitorios</span></div>
+          <div id="roomBars" class="bar-chart"></div>
+        </article>
+        <article class="panel span-7">
+          <div class="panel-header"><h3>Tabla de zonas</h3><span id="zoneTableCount"></span></div>
+          <div class="table-wrap tall">
+            <table id="zoneTable">
+              <thead><tr><th>Zona</th><th>Anuncios</th><th>Mediana</th><th>Prom. depurado</th><th>USD/m²</th><th>Outliers</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section id="calidad" class="section-shell dashboard-grid">
+        <article class="panel span-4 quality-card">
+          <p class="eyebrow">Calidad de datos</p>
+          <h2>Outliers, vacíos y cobertura</h2>
+          <dl id="qualityList"></dl>
+          <p class="method-note">Metodología: precios normalizados a USD, detección de precio por m² y exclusión comercial de precios extremos mediante rango típico del mercado.</p>
+        </article>
+        <article class="panel span-8">
+          <div class="panel-header"><h3>Outliers detectados</h3><span>Ejemplos</span></div>
+          <div id="outlierList" class="outlier-list"></div>
+        </article>
+      </section>
+
+      <section class="section-shell">
+        <div class="section-title">
+          <p class="eyebrow">Lectura comercial</p>
+          <h2>Insights automáticos</h2>
+        </div>
+        <div id="insightsGrid" class="insights-grid"></div>
+      </section>
+    </main>
+
+    <footer>Dashboard exploratorio. Validar manualmente decisiones de inversión, pricing o adquisición.</footer>
+    <script src="data/dashboard-data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
