@@ -31,3 +31,13 @@ Esto copia los CSV a `dashboard-inmuebles-e24/data/` y reconstruye `dashboard-da
 ## Nota de cobertura
 
 El dashboard no inventa datos. Si una operación o categoría aparece con bajo volumen, refleja exactamente lo que existe en el CSV completo.
+
+## Metodología de resaltadores
+
+Los resaltadores se detectan desde la card del listado, no desde el detalle del anuncio. El scraper busca los marcadores visuales de Encuentra24:
+
+- `highlight_3.svg`: Platino
+- cualquier otro marker visible o badge de resaltador: Otros resaltadores
+- sin marker visible: Sin resaltador
+
+El dashboard usa principalmente `highlight_group`, con cuatro valores: `platino`, `otros_resaltadores`, `sin_resaltador` y `desconocido`. No separa Oro y Plata para evitar una lectura comercial dudosa.

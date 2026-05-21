@@ -16,6 +16,7 @@
         <div class="nav-links">
           <a href="#oferta">Oferta</a>
           <a href="#precios">Precios</a>
+          <a href="#resaltadores">Resaltadores</a>
           <a href="#tipologias">Tipologías</a>
           <a href="#calidad">Calidad</a>
         </div>
@@ -63,7 +64,8 @@
           <div class="filter-control"><span>Operación</span><div id="operationFilter" class="multi-select"></div></div>
           <div class="filter-control"><span>Categoría</span><div id="categoryFilter" class="multi-select"></div></div>
           <div class="filter-control"><span>Provincia</span><div id="provinceFilter" class="multi-select"></div></div>
-          <div class="filter-control"><span>Zona</span><div id="zoneFilter" class="multi-select"></div></div>
+          <div class="filter-control"><span>Cantón</span><div id="cantonFilter" class="multi-select"></div></div>
+          <div class="filter-control"><span>Zona/Distrito</span><div id="zoneFilter" class="multi-select"></div></div>
           <div class="filter-control"><span>Dormitorios</span><div id="roomFilter" class="multi-select"></div></div>
           <label>Precio mínimo<input id="priceMin" type="number" min="0" inputmode="numeric" placeholder="USD" /></label>
           <label>Precio máximo<input id="priceMax" type="number" min="0" inputmode="numeric" placeholder="USD" /></label>
@@ -98,7 +100,7 @@
           <div id="priceHistogram" class="bar-chart histogram"></div>
         </article>
         <article class="panel span-6">
-          <div class="panel-header"><h3>Distribución USD/m²</h3><span>Rangos comerciales</span></div>
+          <div class="panel-header"><h3>Distribución USD/m²</h3><span>Rangos de mercado</span></div>
           <div id="ppm2Histogram" class="bar-chart histogram"></div>
         </article>
         <article class="panel span-6">
@@ -150,6 +152,69 @@
         </article>
       </section>
 
+      <section id="resaltadores" class="section-shell">
+        <div class="section-title">
+          <p class="eyebrow">Visibilidad destacada</p>
+          <h2>Uso de resaltadores</h2>
+          <p id="highlightScope" class="section-note">Lectura basada en la columna highlight_group del CSV.</p>
+        </div>
+        <div class="highlight-filter">
+          <label>Tipo de resaltador
+            <select id="highlightTypeFilter">
+              <option value="todos">Todos</option>
+              <option value="platino">Platino</option>
+              <option value="otros_resaltadores">Otros resaltadores</option>
+              <option value="sin_resaltador">Sin resaltador</option>
+              <option value="desconocido">Desconocido</option>
+            </select>
+          </label>
+        </div>
+        <div id="highlightKpis" class="mini-kpi-grid"></div>
+        <div class="dashboard-grid highlight-grid">
+          <article class="panel span-4">
+            <div class="panel-header"><h3>Distribución</h3><span>Por grupo</span></div>
+            <div id="highlightDistribution" class="bar-chart"></div>
+          </article>
+          <article class="panel span-8">
+            <div class="panel-header"><h3>Resaltadores por rango de precio</h3><span>Inventario por ticket</span></div>
+            <div id="highlightPriceRanges" class="stacked-range-list"></div>
+          </article>
+          <article class="panel span-6">
+            <div class="panel-header"><h3>Precio por grupo</h3><span>Mediana y USD/m²</span></div>
+            <div class="table-wrap">
+              <table id="highlightPriceTable">
+                <thead><tr><th>Grupo</th><th>Anuncios</th><th>Mediana</th><th>Prom. depurado</th><th>Mediana USD/m²</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="panel span-6">
+            <div class="panel-header"><h3>Adopción por categoría</h3><span>Con vs sin resaltador</span></div>
+            <div class="table-wrap">
+              <table id="highlightCategoryTable">
+                <thead><tr><th>Categoría</th><th>Total</th><th>Con resaltador</th><th>Sin resaltador</th><th>% con resaltador</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="panel span-12">
+            <div class="panel-header"><h3>Oportunidades de mayor visibilidad por zona</h3><span>Top zonas accionables</span></div>
+            <div class="table-wrap tall">
+              <table id="highlightZoneTable">
+                <thead><tr><th>Zona</th><th>Total anuncios</th><th>Sin resaltador</th><th>% sin resaltador</th><th>Con resaltador</th><th>% con resaltador</th><th>Precio mediano</th><th>Precio/m² mediano</th><th>Score</th><th>Estrategia recomendada</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <p class="table-note">El score prioriza zonas con alto inventario, alta proporción de anuncios sin resaltador, ticket relevante y nivel de competencia. Se usa como guía estratégica, no como regla automática de pricing.</p>
+          </article>
+        </div>
+        <div class="section-title compact-title">
+          <p class="eyebrow">Acción recomendada</p>
+          <h2>Insights de resaltadores</h2>
+        </div>
+        <div id="highlightInsights" class="insights-grid"></div>
+      </section>
+
       <section id="tipologias" class="section-shell dashboard-grid">
         <article class="panel span-5">
           <div class="panel-header"><h3>Tipologías casas y apartamentos</h3><span>Por dormitorios</span></div>
@@ -171,17 +236,21 @@
           <p class="eyebrow">Calidad de datos</p>
           <h2>Outliers, vacíos y cobertura</h2>
           <dl id="qualityList"></dl>
-          <p class="method-note">Metodología: precios normalizados a USD, detección de precio por m² y exclusión comercial de precios extremos mediante rango típico del mercado.</p>
+          <p class="method-note">Metodología: precios normalizados a USD, detección de precio por m² y lectura depurada de precios extremos mediante rango típico del mercado.</p>
         </article>
         <article class="panel span-8">
-          <div class="panel-header"><h3>Outliers detectados</h3><span>Ejemplos</span></div>
+          <div class="panel-header"><h3>Registros para revisar</h3><span id="outlierCountLabel"></span></div>
+          <div class="outlier-tools">
+            <label>Buscar registro<input id="outlierSearch" type="search" placeholder="Título, zona, provincia..." /></label>
+          </div>
           <div id="outlierList" class="outlier-list"></div>
+          <button id="loadMoreOutliers" class="secondary-button" type="button">Ver más</button>
         </article>
       </section>
 
       <section class="section-shell">
         <div class="section-title">
-          <p class="eyebrow">Lectura comercial</p>
+          <p class="eyebrow">Lectura estratégica</p>
           <h2>Insights automáticos</h2>
         </div>
         <div id="insightsGrid" class="insights-grid"></div>

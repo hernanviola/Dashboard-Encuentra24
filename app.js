@@ -4,6 +4,7 @@ const state = {
   operation: [],
   category: [],
   province: [],
+  canton: [],
   zone: [],
   rooms: [],
   priceMin: "",
@@ -20,6 +21,16 @@ const scatterState = {
   plotted: [],
 };
 
+const highlightState = {
+  type: "todos",
+};
+
+const outlierState = {
+  search: "",
+  visible: 40,
+  filter: "todos",
+};
+
 let lastOpenedOutlierUrl = "";
 
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
@@ -29,6 +40,13 @@ const number = (v) => Number.isFinite(v) ? fmt.format(v) : "—";
 const money = (v) => Number.isFinite(v) ? moneyFmt.format(v) : "—";
 const pct = (v) => Number.isFinite(v) ? `${fmt.format(v)}%` : "—";
 const labelZone = (z) => (z || "Sin zona").replaceAll(" | ", " · ");
+const cleanGeoLabel = (value, fallback) => {
+  const text = value || fallback;
+  return text === "Sin canton" ? "Sin cantón" : text;
+};
+const geoProvince = (d) => cleanGeoLabel(d.provinceGeo || d.province, "Sin provincia");
+const geoCanton = (d) => cleanGeoLabel(d.cantonGeo || d.canton, "Sin cantón");
+const geoZone = (d) => cleanGeoLabel(d.zoneGeo || d.zone, "Sin zona");
 const cleanCategory = (item) => item.categoryLabel || item.category || "Sin categoría";
 const escapeHtml = (value) => String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
 const selectedValues = (key) => state[key] || [];
@@ -45,6 +63,26 @@ const PPM2_BINS = {
   venta: [0, 500, 1000, 1500, 2000, 2500, 3000, 4000, 6000, 10000, Infinity],
   alquiler: [0, 5, 10, 15, 20, 25, 30, 40, 60, 100, Infinity],
 };
+
+const HIGHLIGHT_ORDER = ["platino", "otros_resaltadores", "sin_resaltador", "desconocido"];
+const HIGHLIGHT_LABELS = {
+  platino: "Platino",
+  otros_resaltadores: "Otros resaltadores",
+  sin_resaltador: "Sin resaltador",
+  desconocido: "Desconocido",
+};
+const HIGHLIGHT_PRICE_BINS = {
+  venta: [0, 100000, 250000, 500000, 1000000, Infinity],
+  alquiler: [0, 500, 1000, 1500, 2500, 5000, Infinity],
+  mixto: [0, 100000, 250000, 500000, 1000000, Infinity],
+};
+const QUALITY_FILTERS = [
+  ["todos", "Todos"],
+  ["outliers", "Outliers"],
+  ["invalid_price", "Precios inválidos"],
+  ["missing_m2", "Sin m²"],
+  ["missing_rooms", "Sin dormitorios"],
+];
 
 function median(values) {
   const clean = values.filter(Number.isFinite).sort((a, b) => a - b);
@@ -95,8 +133,9 @@ function filteredListings() {
   return DATA.listings.filter((d) => {
     if (!matchesSelection("operation", d.operation)) return false;
     if (!matchesSelection("category", d.category)) return false;
-    if (!matchesSelection("province", d.province)) return false;
-    if (!matchesSelection("zone", d.zoneFull)) return false;
+    if (!matchesSelection("province", geoProvince(d))) return false;
+    if (!matchesSelection("canton", geoCanton(d))) return false;
+    if (!matchesSelection("zone", geoZone(d))) return false;
     if (!matchesSelection("rooms", d.roomBucket)) return false;
     if (state.priceMin && (!Number.isFinite(d.price) || d.price < minPrice)) return false;
     if (state.priceMax && (!Number.isFinite(d.price) || d.price > maxPrice)) return false;
@@ -117,6 +156,11 @@ function renderMultiSelect(id, key, options, labelFn = (x) => x) {
   el.innerHTML = `
     <button class="multi-trigger" type="button">${escapeHtml(label)}</button>
     <div class="multi-menu">
+      <input class="multi-search" type="search" placeholder="Buscar..." />
+      <div class="multi-actions">
+        <button type="button" data-action="select-visible">Seleccionar todo visible</button>
+        <button type="button" data-action="clear">Limpiar selección</button>
+      </div>
       <label class="multi-option all-option"><input type="checkbox" data-value="__all__" ${selected.length ? "" : "checked"} /> Todas</label>
       ${options.map((value) => `
         <label class="multi-option">
@@ -135,6 +179,30 @@ function renderMultiSelect(id, key, options, labelFn = (x) => x) {
     el.classList.toggle("open");
   });
 
+  const search = el.querySelector(".multi-search");
+  search.addEventListener("input", () => {
+    const query = search.value.trim().toLowerCase();
+    el.querySelectorAll(".multi-option:not(.all-option)").forEach((option) => {
+      option.hidden = query && !option.textContent.toLowerCase().includes(query);
+    });
+  });
+
+  el.querySelector("[data-action='select-visible']").addEventListener("click", () => {
+    const visible = [...el.querySelectorAll(".multi-option:not(.all-option):not([hidden]) input")]
+      .map((input) => input.dataset.value);
+    state[key] = [...new Set([...selectedValues(key), ...visible])];
+    if (["operation", "category", "province", "canton"].includes(key)) updateGeoOptions();
+    renderFilterControls();
+    renderAll();
+  });
+
+  el.querySelector("[data-action='clear']").addEventListener("click", () => {
+    state[key] = [];
+    if (["operation", "category", "province", "canton"].includes(key)) updateGeoOptions();
+    renderFilterControls();
+    renderAll();
+  });
+
   el.querySelectorAll("input[type='checkbox']").forEach((input) => {
     input.addEventListener("change", () => {
       const value = input.dataset.value;
@@ -145,7 +213,7 @@ function renderMultiSelect(id, key, options, labelFn = (x) => x) {
       } else {
         state[key] = selectedValues(key).filter((item) => item !== value);
       }
-      if (["operation", "category", "province"].includes(key)) updateZoneOptions();
+      if (["operation", "category", "province", "canton"].includes(key)) updateGeoOptions();
       renderFilterControls();
       renderAll();
     });
@@ -154,18 +222,19 @@ function renderMultiSelect(id, key, options, labelFn = (x) => x) {
   el.querySelectorAll(".filter-chip").forEach((chip) => {
     chip.addEventListener("click", () => {
       state[key] = selectedValues(key).filter((item) => item !== chip.dataset.value);
-      if (["operation", "category", "province"].includes(key)) updateZoneOptions();
+      if (["operation", "category", "province", "canton"].includes(key)) updateGeoOptions();
       renderFilterControls();
       renderAll();
     });
   });
 }
 
-function baseRowsForZoneOptions() {
+function baseRowsForGeoOptions(level) {
   return DATA.listings.filter((d) => {
     if (!matchesSelection("operation", d.operation)) return false;
     if (!matchesSelection("category", d.category)) return false;
-    if (!matchesSelection("province", d.province)) return false;
+    if (level !== "province" && !matchesSelection("province", geoProvince(d))) return false;
+    if (level === "zone" && !matchesSelection("canton", geoCanton(d))) return false;
     return true;
   });
 }
@@ -175,13 +244,17 @@ function renderFilterControls() {
   const categories = [...new Map(listings.map((d) => [d.category, d.categoryLabel])).entries()]
     .sort((a, b) => a[1].localeCompare(b[1]));
   const categoryLabels = Object.fromEntries(categories);
-  const zones = [...new Set(baseRowsForZoneOptions().map((d) => d.zoneFull).filter(Boolean))].sort();
+  const provinces = [...new Set(baseRowsForGeoOptions("province").map(geoProvince).filter(Boolean))].sort();
+  const cantons = [...new Set(baseRowsForGeoOptions("canton").map(geoCanton).filter(Boolean))].sort();
+  const zones = [...new Set(baseRowsForGeoOptions("zone").map(geoZone).filter(Boolean))].sort();
+  state.canton = selectedValues("canton").filter((canton) => cantons.includes(canton));
   state.zone = selectedValues("zone").filter((zone) => zones.includes(zone));
 
   renderMultiSelect("#operationFilter", "operation", [...new Set(listings.map((d) => d.operation).filter(Boolean).sort())]);
   renderMultiSelect("#categoryFilter", "category", categories.map(([value]) => value), (value) => categoryLabels[value] || value);
-  renderMultiSelect("#provinceFilter", "province", [...new Set(listings.map((d) => d.province).filter(Boolean).sort())]);
-  renderMultiSelect("#zoneFilter", "zone", zones, labelZone);
+  renderMultiSelect("#provinceFilter", "province", provinces);
+  renderMultiSelect("#cantonFilter", "canton", cantons);
+  renderMultiSelect("#zoneFilter", "zone", zones);
   renderMultiSelect("#roomFilter", "rooms", ["1 dormitorio", "2 dormitorios", "3 dormitorios", "4+ dormitorios", "Sin dato"]);
 }
 
@@ -196,13 +269,12 @@ function setupFilters() {
   ].forEach(([id, key]) => {
     document.querySelector(id).addEventListener("input", (event) => {
       state[key] = event.target.value;
-      if (["operation", "category", "province"].includes(key)) updateZoneOptions();
       renderAll();
     });
   });
 
   document.querySelector("#resetFilters").addEventListener("click", () => {
-    Object.assign(state, { operation: [], category: [], province: [], zone: [], rooms: [], priceMin: "", priceMax: "", m2Min: "", m2Max: "" });
+    Object.assign(state, { operation: [], category: [], province: [], canton: [], zone: [], rooms: [], priceMin: "", priceMax: "", m2Min: "", m2Max: "" });
     document.querySelectorAll(".filters > label input").forEach((el) => { el.value = ""; });
     renderFilterControls();
     renderAll();
@@ -244,8 +316,37 @@ function setupScatterControls() {
   });
 }
 
-function updateZoneOptions() {
-  const zones = new Set(baseRowsForZoneOptions().map((d) => d.zoneFull).filter(Boolean));
+function setupHighlightControls() {
+  const select = document.querySelector("#highlightTypeFilter");
+  if (!select) return;
+  select.addEventListener("change", (event) => {
+    highlightState.type = event.target.value;
+    renderHighlights(filteredListings());
+  });
+}
+
+function setupOutlierControls() {
+  const search = document.querySelector("#outlierSearch");
+  const loadMore = document.querySelector("#loadMoreOutliers");
+  if (search) {
+    search.addEventListener("input", (event) => {
+      outlierState.search = event.target.value;
+      outlierState.visible = 40;
+      renderQuality(filteredListings());
+    });
+  }
+  if (loadMore) {
+    loadMore.addEventListener("click", () => {
+      outlierState.visible += 40;
+      renderQuality(filteredListings());
+    });
+  }
+}
+
+function updateGeoOptions() {
+  const cantons = new Set(baseRowsForGeoOptions("canton").map(geoCanton).filter(Boolean));
+  state.canton = selectedValues("canton").filter((canton) => cantons.has(canton));
+  const zones = new Set(baseRowsForGeoOptions("zone").map(geoZone).filter(Boolean));
   state.zone = selectedValues("zone").filter((zone) => zones.has(zone));
 }
 
@@ -547,23 +648,55 @@ function hideScatterTooltip() {
 }
 
 function renderQuality(rows) {
-  const q = [
-    ["Outliers", rows.filter((d) => d.isOutlier).length],
-    ["Precios inválidos", rows.filter((d) => d.priceFlag === "invalid_price" || !Number.isFinite(d.price)).length],
-    ["Sin m²", rows.filter((d) => !Number.isFinite(d.m2)).length],
-    ["Sin dormitorios", rows.filter((d) => !Number.isFinite(d.rooms)).length],
-    ["Duplicados marcados", rows.filter((d) => d.isDuplicate).length],
-  ];
-  document.querySelector("#qualityList").innerHTML = q.map(([label, value]) => `<div><dt>${label}</dt><dd>${number(value)}</dd></div>`).join("");
-  const urls = new Set(rows.map((d) => d.url));
-  const filteredOutliers = DATA.outliers.filter((o) => urls.has(o.url)).slice(0, 12);
-  document.querySelector("#outlierList").innerHTML = filteredOutliers.map((o) => `
-    <article class="outlier-item ${o.url && o.url === lastOpenedOutlierUrl ? "opened" : ""}" data-url="${escapeHtml(o.url || "")}">
-      <strong>${escapeHtml(o.title || "Sin título")}</strong>
-      <span>${escapeHtml(o.categoryLabel)} · ${escapeHtml(labelZone(o.zoneFull))} · ${escapeHtml(money(o.price))} · ${escapeHtml(o.reason)}</span>
+  const counts = qualityCounts(rows);
+  const activeCount = counts[outlierState.filter] || 0;
+  if (outlierState.filter !== "todos" && activeCount === 0) {
+    outlierState.filter = "todos";
+  }
+  document.querySelector("#qualityList").innerHTML = QUALITY_FILTERS.map(([key, label]) => {
+    const value = counts[key] || 0;
+    const disabled = key !== "todos" && value === 0;
+    return `
+      <button class="quality-filter ${outlierState.filter === key ? "active" : ""}" type="button" data-quality-filter="${key}" ${disabled ? "disabled" : ""}>
+        <span>${escapeHtml(label)}</span>
+        <strong>${number(value)}</strong>
+      </button>
+    `;
+  }).join("");
+  document.querySelectorAll("[data-quality-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.disabled) return;
+      outlierState.filter = button.dataset.qualityFilter;
+      outlierState.visible = 40;
+      renderQuality(filteredListings());
+    });
+  });
+  const query = outlierState.search.trim().toLowerCase();
+  const qualityRows = qualityIssueRows(rows, outlierState.filter);
+  const allIssues = qualityRows
+    .filter((o) => {
+      if (!query) return true;
+      return [o.title, o.zoneFull, o.province, o.categoryLabel, o.operation, o.issueLabel]
+        .some((value) => String(value || "").toLowerCase().includes(query));
+    })
+    .sort((a, b) => (Number.isFinite(b.price) ? b.price : -Infinity) - (Number.isFinite(a.price) ? a.price : -Infinity));
+  const visibleIssues = allIssues.slice(0, outlierState.visible);
+  document.querySelector("#outlierCountLabel").textContent = `Mostrando ${number(visibleIssues.length)} de ${number(allIssues.length)}`;
+  const loadMore = document.querySelector("#loadMoreOutliers");
+  if (loadMore) {
+    loadMore.hidden = visibleIssues.length >= allIssues.length;
+    loadMore.textContent = `Ver más (${number(Math.max(0, allIssues.length - visibleIssues.length))})`;
+  }
+  document.querySelector("#outlierList").innerHTML = visibleIssues.map((o) => `
+    <article class="outlier-item compact ${o.url && o.url === lastOpenedOutlierUrl ? "opened" : ""}" data-url="${escapeHtml(o.url || "")}">
+      <div>
+        <strong>${escapeHtml(o.title || "Sin título")}</strong>
+        <span>${escapeHtml(o.operation || "")} · ${escapeHtml(o.categoryLabel)} · ${escapeHtml(o.province || "Sin provincia")} · ${escapeHtml(labelZone(o.zoneFull))}</span>
+        <span>${escapeHtml(money(o.price))} · ${Number.isFinite(o.m2) ? `${escapeHtml(number(o.m2))} m²` : "Sin m²"} · ${Number.isFinite(o.pricePerM2) ? `${escapeHtml(money(o.pricePerM2))}/m²` : "Sin USD/m²"} · ${escapeHtml(o.issueLabel)}</span>
+      </div>
       ${o.url ? `<button type="button" class="outlier-open">Ver anuncio</button>` : `<em>URL no disponible</em>`}
     </article>
-  `).join("") || `<p class="empty">No hay outliers para este filtro.</p>`;
+  `).join("") || `<p class="empty">No hay registros para este filtro de calidad.</p>`;
   document.querySelectorAll(".outlier-item").forEach((card) => {
     const url = card.dataset.url;
     if (!url) return;
@@ -575,6 +708,39 @@ function renderQuality(rows) {
       openOutlier(event.currentTarget.closest(".outlier-item").dataset.url);
     });
   });
+}
+
+function qualityIssues(row) {
+  const issues = [];
+  if (row.isOutlier) issues.push(["outliers", row.outlierMethod ? `Outlier · ${row.outlierMethod}` : "Outlier"]);
+  if (row.priceFlag === "invalid_price" || !Number.isFinite(row.price)) issues.push(["invalid_price", "Precio inválido"]);
+  if (!Number.isFinite(row.m2)) issues.push(["missing_m2", "Sin m²"]);
+  if (!Number.isFinite(row.rooms)) issues.push(["missing_rooms", "Sin dormitorios"]);
+  return issues;
+}
+
+function qualityCounts(rows) {
+  const counts = Object.fromEntries(QUALITY_FILTERS.map(([key]) => [key, 0]));
+  rows.forEach((row) => {
+    const issues = qualityIssues(row);
+    if (issues.length) counts.todos += 1;
+    issues.forEach(([key]) => { counts[key] += 1; });
+  });
+  return counts;
+}
+
+function qualityIssueRows(rows, activeFilter) {
+  return rows
+    .map((row) => {
+      const issues = qualityIssues(row);
+      const visibleIssues = activeFilter === "todos" ? issues : issues.filter(([key]) => key === activeFilter);
+      if (!visibleIssues.length) return null;
+      return {
+        ...row,
+        issueLabel: visibleIssues.map(([, label]) => label).join(" · "),
+      };
+    })
+    .filter(Boolean);
 }
 
 function openOutlier(url) {
@@ -673,10 +839,10 @@ function buildCommercialInsights(rows) {
       `${labelZone(topZone.zone)} concentra ${number(topZone.count)} anuncios, ${pct((topZone.count / total) * 100)} del segmento filtrado.${smallSample ? " Muestra reducida." : ""}`,
       highCompetition
         ? "Segmento competido: los anuncios pelean visibilidad desde el primer día y el ordenamiento orgánico puede diluir publicaciones comparables."
-        : "La oferta está distribuida entre varias zonas; la oportunidad comercial está en priorizar clientes de zonas con mayor mediana o mejor USD/m².",
+        : "La oferta está distribuida entre varias zonas; conviene enfocar la estrategia en ubicaciones con mejor referencia de precio o mejor USD/m².",
       highCompetition
-        ? "Recomendación KAM: ofrecer resaltadores, reposicionadores y mejora de fotos/títulos para clientes activos en esta zona."
-        : "Recomendación KAM: priorizar cuentas con inventario en zonas de mayor valor antes de empujar descuentos."
+        ? "Para competir mejor, se recomienda combinar resaltadores, reposicionadores y optimización de fotos/títulos en esta zona."
+        : "Se recomienda reforzar las publicaciones ubicadas en zonas de mayor valor antes de aplicar ajustes agresivos de precio."
     ));
   }
 
@@ -686,7 +852,7 @@ function buildCommercialInsights(rows) {
     selectedOps.length !== 1
       ? "La vista combina venta y alquiler; leer cada mediana por separado evita comparar ticket de compra contra renta mensual."
       : "La mediana y el rango típico ayudan a comparar publicaciones similares sin dejarse llevar por precios extremos.",
-    "Recomendación KAM: si un cliente publica por encima de esta referencia, reforzar diferenciadores: fotos, amenidades, ubicación, descripción y visibilidad premium."
+    "Si una publicación está por encima de esta referencia, conviene reforzar diferenciadores: fotos, amenidades, ubicación, descripción y visibilidad destacada."
   ));
 
   if (premium) {
@@ -696,18 +862,18 @@ function buildCommercialInsights(rows) {
       singleZone
         ? "La conversación debe enfocarse en cómo justificar el valor frente a comparables dentro de la misma zona."
         : "Esta zona permite posicionar inventario de mayor valor y justificar mensajes de exclusividad, ubicación y calidad.",
-      "Recomendación KAM: orientar la propuesta a branding, confianza y exposición premium; no llevar la conversación solo a precio."
+      "Se recomienda orientar la comunicación a confianza, calidad, ubicación y mayor exposición; no solo a precio."
     ));
   }
 
   if (opportunity) {
     cards.push(insight(
-      singleZone ? "Oportunidad comercial en la zona" : "Zona para prospectar",
+      singleZone ? "Oportunidad de crecimiento en la zona" : "Zona con oportunidad de crecimiento",
       `${opportunity.label}${priceZoneLabel} · ${number(opportunity.count)} anuncios · mediana ${money(opportunity.median)}`,
       singleZone
         ? "La oportunidad está en mejorar desempeño de publicaciones activas: presentación, reposicionamiento y claridad del precio frente a comparables."
-        : "Combina inventario prospectable con menor saturación relativa que las zonas líderes y precio mediano competitivo.",
-      "Recomendación KAM: priorizar brokers o propietarios con varias publicaciones en esta zona y ofrecer paquetes de exposición para ganar tracción."
+        : "Combina inventario relevante con menor saturación relativa que las zonas líderes y precio mediano competitivo.",
+      "Una estrategia recomendada es mejorar presentación, visibilidad destacada y reposicionamiento para ganar tracción frente a comparables."
     ));
   }
 
@@ -722,22 +888,22 @@ function buildCommercialInsights(rows) {
         ? `Volumen alto: ${number(total)} publicaciones`
         : `Inventario filtrado: ${number(total)} publicaciones`;
   cards.push(insight(
-    "Producto sugerido",
+    "Estrategia recomendada",
     `${productMetric} · foco ${premiumTarget}`,
     highCompetition
       ? "La visibilidad orgánica puede diluirse en zonas con mucha oferta comparable."
       : highTicket
-        ? "El valor del inventario permite vender una propuesta de confianza, marca y exposición, no solo volumen."
+        ? "El valor del inventario permite construir una estrategia de confianza, marca y exposición, no solo volumen."
         : categoryBundle
-          ? "El volumen habilita una conversación de paquete/bundle para sostener presencia constante."
-          : "Con menor inventario, la mejor jugada es captación selectiva y posicionamiento de publicaciones de alta calidad.",
+          ? "El volumen permite sostener presencia constante con una estrategia combinada de visibilidad y reposicionamiento."
+          : "Con menor inventario, conviene priorizar publicaciones de alta calidad y con buena relación precio/m².",
     highCompetition
-      ? "Recomendación KAM: ofrecer Oro/Platino + reposicionadores como paquete de exposición."
+      ? "Para competir en este segmento, puede ser conveniente combinar Platino con reposicionadores y optimización de fotos/títulos."
       : highTicket
-        ? "Recomendación KAM: proponer productos premium/branding y reforzar activos visuales del cliente."
+        ? "Se recomienda usar visibilidad destacada y reforzar los activos visuales de la publicación."
         : categoryBundle
-          ? "Recomendación KAM: vender bundle por categoría/zona para clientes con varias publicaciones activas."
-          : "Recomendación KAM: captar clientes de nicho y usar destacados puntuales en propiedades con mejor USD/m²."
+          ? "Conviene mantener exposición frecuente por categoría y zona para sostener presencia frente al inventario comparable."
+          : "Se recomienda aplicar destacados puntuales en propiedades con mejor relación precio/m²."
   ));
 
   return smallSample ? cards.slice(0, 3) : cards.slice(0, 5);
@@ -753,6 +919,305 @@ function renderInsights(rows) {
       <strong>${escapeHtml(item.recommendation)}</strong>
     </article>
   `).join("");
+}
+
+function normalizedHighlightType(row) {
+  const value = row.highlightGroup || row.highlightType;
+  if (["platino", "otros_resaltadores", "sin_resaltador"].includes(value)) return value;
+  const signal = [row.highlightSvg, row.highlightRaw, row.highlightType].filter(Boolean).join(" ").toLowerCase();
+  const hasHighlight = String(row.hasHighlight ?? "").toLowerCase();
+  if (signal.includes("highlight_3.svg")) return "platino";
+  if (signal.includes("highlight_1.svg") || signal.includes("highlight_2.svg")) return "otros_resaltadores";
+  if (hasHighlight === "true") return "otros_resaltadores";
+  if (hasHighlight === "false" || !signal.trim() || signal.includes("sin marker") || signal.includes("no visible highlight marker")) return "sin_resaltador";
+  return "desconocido";
+}
+
+function hasKnownHighlight(row) {
+  return ["platino", "otros_resaltadores"].includes(normalizedHighlightType(row));
+}
+
+function highlightRows(rows) {
+  if (highlightState.type === "todos") return rows;
+  return rows.filter((row) => normalizedHighlightType(row) === highlightState.type);
+}
+
+function highlightCountMap(rows) {
+  return HIGHLIGHT_ORDER.reduce((acc, type) => {
+    acc[type] = rows.filter((row) => normalizedHighlightType(row) === type).length;
+    return acc;
+  }, {});
+}
+
+function highlightAdoption(rows) {
+  const knownRows = rows.filter((row) => normalizedHighlightType(row) !== "desconocido");
+  const highlighted = knownRows.filter(hasKnownHighlight).length;
+  const noHighlight = knownRows.filter((row) => normalizedHighlightType(row) === "sin_resaltador").length;
+  return {
+    knownTotal: knownRows.length,
+    highlighted,
+    noHighlight,
+    adoption: knownRows.length ? (highlighted / knownRows.length) * 100 : null,
+    noHighlightPct: knownRows.length ? (noHighlight / knownRows.length) * 100 : null,
+  };
+}
+
+function visibleHighlightTypes(rows) {
+  const counts = highlightCountMap(rows);
+  return HIGHLIGHT_ORDER.filter((type) => type !== "desconocido" || counts.desconocido > 0);
+}
+
+function renderHighlightTypeFilter(rows) {
+  const select = document.querySelector("#highlightTypeFilter");
+  if (!select) return;
+  const visibleTypes = visibleHighlightTypes(rows);
+  if (highlightState.type !== "todos" && !visibleTypes.includes(highlightState.type)) {
+    highlightState.type = "todos";
+  }
+  select.innerHTML = [
+    `<option value="todos">Todos</option>`,
+    ...visibleTypes.map((type) => `<option value="${type}">${escapeHtml(HIGHLIGHT_LABELS[type])}</option>`),
+  ].join("");
+  select.value = highlightState.type;
+}
+
+function productSuggestion(row) {
+  const medianPrice = row.median;
+  const premiumTicket = Number.isFinite(medianPrice) && medianPrice >= (selectedValues("operation")[0] === "alquiler" ? 1800 : 500000);
+  if ((row.outliers >= Math.max(3, row.count * 0.12)) || row.missingDataPct >= 35) return "Auditar precio/calidad";
+  if (premiumTicket || row.platinumPct >= 8) return "Platino";
+  if (row.count >= 100 || (row.noHighlightPct >= 55 && row.count >= 25)) return "Resaltador + reposicionadores";
+  if (row.highlightedPct >= 15 || row.noHighlightPct >= 65) return "Otros resaltadores";
+  return "Resaltador inicial";
+}
+
+function highlightZoneOpportunity(rows) {
+  const zones = Object.entries(groupBy(rows, (d) => d.zoneFull))
+    .map(([zone, items]) => {
+      const countMap = highlightCountMap(items);
+      const known = highlightAdoption(items);
+      const zoneMetricsValue = metrics(items);
+      const noHighlightPct = known.noHighlightPct ?? 0;
+      const highlightedPct = known.adoption ?? 0;
+      const platinumPct = items.length ? ((countMap.platino || 0) / items.length) * 100 : 0;
+      const outliers = items.filter((item) => item.isOutlier).length;
+      const missingDataPct = items.length ? (items.filter((item) => !Number.isFinite(item.price) || !Number.isFinite(item.m2)).length / items.length) * 100 : 0;
+      const score = (items.length * 0.42) + (noHighlightPct * 1.6) + ((Number.isFinite(zoneMetricsValue.median) ? Math.log10(Math.max(zoneMetricsValue.median, 1)) : 0) * 10);
+      const row = {
+        zone,
+        label: labelZone(zone),
+        count: items.length,
+        noHighlight: countMap.sin_resaltador || 0,
+        highlighted: known.highlighted,
+        noHighlightPct,
+        highlightedPct,
+        platinumPct,
+        outliers,
+        missingDataPct,
+        median: zoneMetricsValue.median,
+        medianPpm2: zoneMetricsValue.medianPpm2,
+        score,
+      };
+      return { ...row, product: productSuggestion(row) };
+    })
+    .filter((row) => row.count >= 3)
+    .sort((a, b) => b.score - a.score);
+  return zones;
+}
+
+function renderHighlightKpis(rows, sectionRows) {
+  const counts = highlightCountMap(sectionRows);
+  const adoption = highlightAdoption(sectionRows);
+  const cards = [
+    ["Total anuncios filtrados", number(sectionRows.length), highlightState.type === "todos" ? "Filtro local: todos" : HIGHLIGHT_LABELS[highlightState.type]],
+    ["Platino", number(counts.platino), "Resaltador premium"],
+    ["Otros resaltadores", number(counts.otros_resaltadores), "Visibilidad pagada"],
+    ["Sin resaltador", number(counts.sin_resaltador), "Mayor visibilidad disponible"],
+    ["% con resaltador", pct(adoption.adoption), "Sobre anuncios clasificados"],
+    ["% sin resaltador", pct(adoption.noHighlightPct), "Sobre anuncios clasificados"],
+  ];
+  if (counts.desconocido > 0) {
+    cards.splice(4, 0, ["Desconocido", number(counts.desconocido), "Sin señal confiable"]);
+  }
+  document.querySelector("#highlightScope").textContent = `${number(rows.length)} anuncios con filtros globales · ${number(sectionRows.length)} visibles en esta sección`;
+  document.querySelector("#highlightKpis").innerHTML = cards.map(([label, value, note]) => `
+    <article class="mini-kpi"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><em>${escapeHtml(note)}</em></article>
+  `).join("");
+}
+
+function renderHighlightDistribution(rows) {
+  const counts = highlightCountMap(rows);
+  const visibleTypes = visibleHighlightTypes(rows);
+  const data = visibleTypes.map((type) => ({ label: HIGHLIGHT_LABELS[type], value: counts[type] || 0 }));
+  barChart("#highlightDistribution", data, number, visibleTypes.length);
+}
+
+function renderHighlightPriceRanges(rows) {
+  const el = document.querySelector("#highlightPriceRanges");
+  const cleanRows = rows.filter((row) => Number.isFinite(row.price) && row.price >= 0);
+  if (!cleanRows.length) {
+    el.innerHTML = `<p class="empty">No hay precios suficientes para cruzar resaltadores.</p>`;
+    return;
+  }
+  const selectedOps = selectedValues("operation");
+  const binKey = selectedOps.length === 1 ? selectedOps[0] : "mixto";
+  const bins = HIGHLIGHT_PRICE_BINS[binKey] || HIGHLIGHT_PRICE_BINS.mixto;
+  const ranges = bins.slice(0, -1).map((from, index) => {
+    const to = bins[index + 1];
+    const items = cleanRows.filter((row) => row.price >= from && (to === Infinity ? true : row.price < to));
+    return { label: rangeLabel(from, to, money), items, counts: highlightCountMap(items) };
+  }).filter((range) => range.items.length);
+  const peak = Math.max(...ranges.map((range) => range.items.length), 1);
+  el.innerHTML = ranges.map((range) => `
+    <div class="stack-row">
+      <div class="stack-label"><strong>${range.label}</strong><span>${number(range.items.length)} anuncios</span></div>
+      <div class="stack-track" style="max-width:${Math.max(12, (range.items.length / peak) * 100)}%">
+        ${visibleHighlightTypes(range.items).map((type) => {
+          const value = range.counts[type] || 0;
+          const width = range.items.length ? (value / range.items.length) * 100 : 0;
+          return value ? `<span class="stack-segment highlight-${type}" style="width:${width}%" title="${HIGHLIGHT_LABELS[type]}: ${number(value)}"></span>` : "";
+        }).join("")}
+      </div>
+      <div class="stack-legend-inline">${visibleHighlightTypes(range.items).map((type) => `${HIGHLIGHT_LABELS[type]} ${number(range.counts[type] || 0)}`).join(" · ")}</div>
+    </div>
+  `).join("");
+}
+
+function renderHighlightPriceTable(rows) {
+  const grouped = groupBy(rows, normalizedHighlightType);
+  document.querySelector("#highlightPriceTable tbody").innerHTML = visibleHighlightTypes(rows).map((type) => {
+    const items = grouped[type] || [];
+    const m = metrics(items);
+    return `<tr><td>${HIGHLIGHT_LABELS[type]}</td><td class="numeric">${number(items.length)}</td><td class="numeric">${money(m.median)}</td><td class="numeric">${money(m.avgClean)}</td><td class="numeric">${money(m.medianPpm2)}</td></tr>`;
+  }).join("");
+}
+
+function renderHighlightCategoryTable(rows) {
+  const data = Object.entries(groupBy(rows, cleanCategory))
+    .map(([label, items]) => {
+      const adoption = highlightAdoption(items);
+      return { label, total: items.length, highlighted: adoption.highlighted, noHighlight: adoption.noHighlight, pct: adoption.adoption };
+    })
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 14);
+  document.querySelector("#highlightCategoryTable tbody").innerHTML = data.map((row) => `
+    <tr><td>${escapeHtml(row.label)}</td><td class="numeric">${number(row.total)}</td><td class="numeric">${number(row.highlighted)}</td><td class="numeric">${number(row.noHighlight)}</td><td class="numeric">${pct(row.pct)}</td></tr>
+  `).join("") || `<tr><td colspan="5">No hay datos.</td></tr>`;
+}
+
+function renderHighlightZoneTable(rows) {
+  const data = highlightZoneOpportunity(rows).slice(0, 40);
+  document.querySelector("#highlightZoneTable tbody").innerHTML = data.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.label)}</td>
+      <td class="numeric">${number(row.count)}</td>
+      <td class="numeric">${number(row.noHighlight)}</td>
+      <td class="numeric">${pct(row.noHighlightPct)}</td>
+      <td class="numeric">${number(row.highlighted)}</td>
+      <td class="numeric">${pct(row.highlightedPct)}</td>
+      <td class="numeric">${money(row.median)}</td>
+      <td class="numeric">${money(row.medianPpm2)}</td>
+      <td class="numeric">${number(row.score)}</td>
+      <td>${escapeHtml(row.product)}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="10">No hay zonas suficientes para calcular oportunidades.</td></tr>`;
+}
+
+function renderHighlightInsights(rows) {
+  const sectionRows = highlightRows(rows);
+  const adoption = highlightAdoption(sectionRows);
+  const zones = highlightZoneOpportunity(sectionRows);
+  const generalMetrics = metrics(sectionRows);
+  const topZone = zones[0];
+  const highlightedRows = sectionRows.filter(hasKnownHighlight);
+  const platinumRows = sectionRows.filter((row) => normalizedHighlightType(row) === "platino");
+  const selectedOps = selectedValues("operation");
+  const binKey = selectedOps.length === 1 ? selectedOps[0] : "mixto";
+  const bins = HIGHLIGHT_PRICE_BINS[binKey] || HIGHLIGHT_PRICE_BINS.mixto;
+  const priceRanges = bins.slice(0, -1).map((from, index) => {
+    const to = bins[index + 1];
+    const items = sectionRows.filter((row) => Number.isFinite(row.price) && row.price >= from && (to === Infinity ? true : row.price < to));
+    const rangeAdoption = highlightAdoption(items);
+    return { label: rangeLabel(from, to, money), count: items.length, adoption: rangeAdoption.adoption ?? 0, noHighlightPct: rangeAdoption.noHighlightPct ?? 0 };
+  }).filter((range) => range.count);
+  const opportunityRange = priceRanges.sort((a, b) => (b.count * (b.noHighlightPct / 100)) - (a.count * (a.noHighlightPct / 100)))[0];
+  const cards = [];
+  const sampleNote = sectionRows.length < 30 ? " Muestra reducida: usar como referencia direccional." : "";
+
+  cards.push(insight(
+    "Adopción de resaltadores",
+    `${pct(adoption.adoption)} con resaltador · ${pct(adoption.noHighlightPct)} sin resaltador`,
+    adoption.knownTotal
+      ? `El segmento tiene ${number(adoption.highlighted)} anuncios con visibilidad pagada y ${number(adoption.noHighlight)} sin resaltador.${sampleNote}`
+      : `No hay señal suficiente para medir adopción de resaltadores en este segmento.${sampleNote}`,
+    adoption.noHighlightPct >= 60
+      ? "Se recomienda aplicar resaltadores en publicaciones sin visibilidad destacada para mejorar exposición dentro de este segmento."
+      : "Para competir en un segmento donde varias publicaciones ya destacan, puede ser conveniente usar Platino y reposicionadores."
+  ));
+
+  cards.push(insight(
+    "Ticket resaltado",
+    `Platino mediana ${money(metrics(platinumRows).median)} · segmento ${money(generalMetrics.median)}`,
+    platinumRows.length
+      ? "Los anuncios con mayor visibilidad permiten entender qué ticket está más dispuesto a invertir en exposición."
+      : "Todavía no hay suficientes anuncios Platino en el filtro para comparar ticket destacado.",
+    Number.isFinite(generalMetrics.median) && generalMetrics.median >= (selectedValues("operation")[0] === "alquiler" ? 1800 : 300000)
+      ? "En propiedades de ticket alto, se recomienda Platino para maximizar exposición y reforzar percepción de calidad."
+      : "Puede ser conveniente iniciar con resaltadores de entrada y mejorar fotos, título y descripción."
+  ));
+
+  if (opportunityRange) {
+    cards.push(insight(
+      "Oportunidad por rango de precio",
+      `${opportunityRange.label} · ${number(opportunityRange.count)} anuncios · ${pct(opportunityRange.noHighlightPct)} sin resaltador`,
+      "Este rango combina inventario relevante con espacio para mejorar visibilidad destacada.",
+      "Se recomienda aplicar resaltadores como punto de partida y sumar reposicionadores en zonas competidas."
+    ));
+  }
+
+  if (topZone) {
+    cards.push(insight(
+      "Zona con oportunidad de mayor visibilidad",
+      `${topZone.label} · ${number(topZone.noHighlight)} sin resaltador · score ${number(topZone.score)}`,
+      topZone.noHighlightPct >= 60
+        ? "Hay volumen activo y baja adopción relativa de resaltadores: existe espacio claro para ganar exposición."
+        : "La zona ya muestra competencia por visibilidad; quien no destaca puede perder exposición frente a comparables.",
+      `Estrategia recomendada: aplicar ${topZone.product} en publicaciones ubicadas en esta zona.`
+    ));
+  }
+
+  cards.push(insight(
+    "Segmento competido",
+    `${number(sectionRows.length)} anuncios · ${number(highlightedRows.length)} con resaltador`,
+    adoption.adoption >= 35
+      ? "La adopción de resaltadores indica competencia visible; destacar deja de ser diferencial y pasa a ser defensa de exposición."
+      : "La adopción aún es baja; hay oportunidad de aprovechar visibilidad destacada antes de que el segmento se sature.",
+    adoption.adoption >= 35
+      ? "Se recomienda combinar Platino con reposicionadores para sostener presencia."
+      : "Se recomienda combinar resaltador inicial con mejora de fotos y título para acelerar resultados."
+  ));
+
+  document.querySelector("#highlightInsights").innerHTML = cards.slice(0, sectionRows.length < 30 ? 3 : 5).map((item) => `
+    <article class="insight-card">
+      <h3>${escapeHtml(item.title)}</h3>
+      <div class="insight-metric">${escapeHtml(item.metric)}</div>
+      <p>${escapeHtml(item.interpretation)}</p>
+      <strong>${escapeHtml(item.recommendation)}</strong>
+    </article>
+  `).join("");
+}
+
+function renderHighlights(rows) {
+  if (!document.querySelector("#highlightKpis")) return;
+  renderHighlightTypeFilter(rows);
+  const sectionRows = highlightRows(rows);
+  renderHighlightKpis(rows, sectionRows);
+  renderHighlightDistribution(sectionRows);
+  renderHighlightPriceRanges(sectionRows);
+  renderHighlightPriceTable(sectionRows);
+  renderHighlightCategoryTable(sectionRows);
+  renderHighlightZoneTable(sectionRows);
+  renderHighlightInsights(rows);
 }
 
 function renderAll() {
@@ -797,6 +1262,7 @@ function renderAll() {
   barChart("#roomBars", rowsForBars(groupBy(typologyRows, (d) => d.roomBucket)), number, 8);
   renderTables(rows);
   renderScatter(rows);
+  renderHighlights(rows);
   renderQuality(rows);
   renderInsights(rows);
 }
@@ -805,6 +1271,8 @@ function init() {
   document.querySelector("#updatedLabel").textContent = DATA.meta.updatedLabel || "Según CSV";
   setupFilters();
   setupScatterControls();
+  setupHighlightControls();
+  setupOutlierControls();
   renderAll();
   window.addEventListener("resize", () => renderScatter(filteredListings()));
 }
