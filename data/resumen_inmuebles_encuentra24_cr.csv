@@ -1,9 +1,9 @@
 seccion,operacion,categoria,provincia,zona_normalizada_completa,indicador,valor,cantidad_anuncios,precio_promedio_usd,precio_mediano_usd,precio_promedio_usd_sin_outliers,precio_mediano_usd_sin_outliers,m2_promedio,precio_promedio_m2,cantidad_outliers,porcentaje_outliers,limite_inferior_iqr,limite_superior_iqr,observacion
 resumen_general_combinado_control_tecnico,,,,,,,26110,176858317.61,200000,231943.22,180000,2002.38,72043.75,2287,8.78,-642623.12,1081573.88,mezcla venta y alquiler; para lectura comercial usar anuncios_por_operacion y categorias
-resumen_resaltadores,,,,,platino,1.48,412,,,,,,,,,,,% sobre total de anuncios procesados
-resumen_resaltadores,,,,,otros_resaltadores,9.73,2703,,,,,,,,,,,% sobre total de anuncios procesados
-resumen_resaltadores,,,,,sin_resaltador,57.76,16045,,,,,,,,,,,% sobre total de anuncios procesados
-resumen_resaltadores,,,,,desconocido,31.03,8619,,,,,,,,,,,% sobre total de anuncios procesados
+resumen_resaltadores,,,,,platino,1.98,550,,,,,,,,,,,% sobre total de anuncios procesados
+resumen_resaltadores,,,,,otros_resaltadores,14.27,3963,,,,,,,,,,,% sobre total de anuncios procesados
+resumen_resaltadores,,,,,sin_resaltador,81.03,22510,,,,,,,,,,,% sobre total de anuncios procesados
+resumen_resaltadores,,,,,desconocido,2.72,756,,,,,,,,,,,% sobre total de anuncios procesados
 anuncios_por_operacion,alquiler,,,,total anuncios,,8010,207920.08,1750,1966.73,1536.4,485.83,844.79,907,11.34,-1800,6200,
 anuncios_por_operacion,venta,,,,total anuncios,,18100,255212896.24,315000,357268.43,285000,2639.93,101986.1,1923,10.66,-423500,1212500,
 anuncios_por_categoria,alquiler,alquiler_vacacional,,,total anuncios,,11,314.69,142.67,206.16,142.67,174,1.6,1,9.09,-225.59,639.35,

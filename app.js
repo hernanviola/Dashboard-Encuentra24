@@ -926,10 +926,18 @@ function normalizedHighlightType(row) {
   if (["platino", "otros_resaltadores", "sin_resaltador"].includes(value)) return value;
   const signal = [row.highlightSvg, row.highlightRaw, row.highlightType].filter(Boolean).join(" ").toLowerCase();
   const hasHighlight = String(row.hasHighlight ?? "").toLowerCase();
+  const method = String(row.highlightMethod ?? "").toLowerCase();
   if (signal.includes("highlight_3.svg")) return "platino";
   if (signal.includes("highlight_1.svg") || signal.includes("highlight_2.svg")) return "otros_resaltadores";
   if (hasHighlight === "true") return "otros_resaltadores";
-  if (hasHighlight === "false" || !signal.trim() || signal.includes("sin marker") || signal.includes("no visible highlight marker")) return "sin_resaltador";
+  if (
+    hasHighlight === "false"
+    && (
+      signal.includes("sin marker")
+      || signal.includes("no visible highlight marker")
+      || ["no_visible_highlight_marker", "css_class", "badge_text", "label_text", "visual_marker"].includes(method)
+    )
+  ) return "sin_resaltador";
   return "desconocido";
 }
 
@@ -1039,7 +1047,10 @@ function renderHighlightKpis(rows, sectionRows) {
   if (counts.desconocido > 0) {
     cards.splice(4, 0, ["Desconocido", number(counts.desconocido), "Sin señal confiable"]);
   }
-  document.querySelector("#highlightScope").textContent = `${number(rows.length)} anuncios con filtros globales · ${number(sectionRows.length)} visibles en esta sección`;
+  const allUnknown = sectionRows.length > 0 && counts.desconocido === sectionRows.length;
+  document.querySelector("#highlightScope").textContent = allUnknown
+    ? `${number(rows.length)} anuncios con filtros globales · Resaltadores no evaluados para este segmento. Ejecutar scraping actualizado.`
+    : `${number(rows.length)} anuncios con filtros globales · ${number(sectionRows.length)} visibles en esta sección`;
   document.querySelector("#highlightKpis").innerHTML = cards.map(([label, value, note]) => `
     <article class="mini-kpi"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><em>${escapeHtml(note)}</em></article>
   `).join("");
